@@ -1,0 +1,20 @@
+# FreeCAD backups
+*.FCBak
+
+# Session-in-progress snapshots (timestamped working state, not committed)
+*.Session-*.FCStd
+
+# Slicer output / cost analysis — regenerated as needed
+gcode/
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+
+# Claude Code local state
+.claude/
+
+# Tiny FreeCAD origin-feature stub STLs (datum axes/planes/origins ~84 bytes)
+# Keep real meshes in stl/, filter stubs out before committing.
