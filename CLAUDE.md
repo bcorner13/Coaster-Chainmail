@@ -1,11 +1,14 @@
 # Project rules — Coaster-Chainmail
 
-A 3D-printable chainmail-fabric coaster. Two FreeCAD documents:
+A 3D-printable chainmail-fabric coaster. Three FreeCAD documents:
 
+- `Params.FCStd` — VarSet-only document holding all parametric variables. Referenced via the canonical `<<Params>>#VarSet.VarName` form.
 - `Coaster_Chainmail.FCStd` — the source unit (the chainmail link / cell geometry)
-- `FabricArray.FCStd` — the printable sheet (array of the unit, this is what slices to `3mf/ChainMailSheet.3mf` and `stl/FabricArray.stl`)
+- `FabricArray.FCStd` — the printable sheet (array of the unit; cross-doc App::Link `Single001 → Coaster_Chainmail.Body001`). This is what slices to `3mf/ChainMailSheet.3mf` and `stl/FabricArray.stl`.
 
 A successful test print has been produced; this project is in **print-deliverable** state.
+
+Known parametric debt is tracked in `WARNINGS.md` (7 unbound literals in Coaster_Chainmail.FCStd to be bound to Params).
 
 ## Project conventions
 

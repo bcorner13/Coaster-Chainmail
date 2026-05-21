@@ -1,0 +1,141 @@
+"""
+Migrate the per-document VarSet objects out of Coaster_Chainmail.FCStd
+and FabricArray.FCStd into a dedicated Params.FCStd at the project root.
+
+Per the global rule (~/.claude/CLAUDE.md): a single Params.FCStd holds all
+parametric variables; cross-doc expressions use the canonical form
+`<<Params>>#VarSet.VarName`.
+
+Idempotent: skips properties that already exist on the target Params.VarSet,
+and skips source docs whose VarSet is already gone.
+
+Run from FreeCAD: Macro -> Macros... -> migrate_varset_to_params
+"""
+import os
+import re
+import FreeCAD as App
+
+PROJECT_DIR = "/Users/bradleycorner/Documents/3dPrinting/Commercial License/Coaster-Chainmail"
+PARAMS_PATH = os.path.join(PROJECT_DIR, "Params.FCStd")
+SOURCE_DOCS = ["Coaster_Chainmail", "FabricArray"]
+
+SYSTEM_PROPS = {"Label", "Label2", "Visibility", "ExpressionEngine"}
+
+
+def get_or_create_params_doc():
+    for d in App.listDocuments().values():
+        fp = getattr(d, "FileName", "") or ""
+        if d.Label == "Params" or (fp and os.path.realpath(fp) == os.path.realpath(PARAMS_PATH)):
+            return d
+    if os.path.exists(PARAMS_PATH):
+        return App.openDocument(PARAMS_PATH)
+    doc = App.newDocument("Params")
+    doc.Label = "Params"
+    doc.saveAs(PARAMS_PATH)
+    return doc
+
+
+def get_or_create_varset(doc, name="VarSet"):
+    vs = doc.getObject(name)
+    if vs is None:
+        vs = doc.addObject("App::VarSet", name)
+        vs.Label = "VarSet"
+    return vs
+
+
+def copy_property(src_vs, dst_vs, prop_name):
+    if prop_name in dst_vs.PropertiesList:
+        return False
+    type_id = src_vs.getTypeIdOfProperty(prop_name)
+    group = src_vs.getGroupOfProperty(prop_name) or "Base"
+    doc_str = src_vs.getDocumentationOfProperty(prop_name) or ""
+    dst_vs.addProperty(type_id, prop_name, group, doc_str)
+    setattr(dst_vs, prop_name, getattr(src_vs, prop_name))
+    return True
+
+
+def repoint_expressions(obj, varset_label, target_form):
+    ee = getattr(obj, "ExpressionEngine", None)
+    if not ee:
+        return 0, []
+    count = 0
+    rewrites = []
+    pattern = re.compile(r'\b' + re.escape(varset_label) + r'\.([A-Za-z_]\w*)')
+    for path, expr in list(ee):
+        new_expr = pattern.sub(target_form + r'.\1', expr)
+        if new_expr != expr:
+            obj.setExpression(path, new_expr)
+            count += 1
+            rewrites.append((obj.Name, path, expr, new_expr))
+    return count, rewrites
+
+
+def main():
+    params_doc = get_or_create_params_doc()
+    params_vs = get_or_create_varset(params_doc, "VarSet")
+
+    summary_lines = []
+    all_rewrites = []
+
+    for src_doc_name in SOURCE_DOCS:
+        d = App.getDocument(src_doc_name)
+        if d is None:
+            summary_lines.append(f"  [skip] doc not open: {src_doc_name}")
+            continue
+        src_vs = d.getObject("VarSet")
+        if src_vs is None:
+            summary_lines.append(f"  [skip] no VarSet in: {src_doc_name}")
+            continue
+
+        copied, skipped = [], []
+        for prop in src_vs.PropertiesList:
+            if prop in SYSTEM_PROPS:
+                continue
+            if copy_property(src_vs, params_vs, prop):
+                copied.append(prop)
+            else:
+                skipped.append(prop)
+
+        n_rewrites_doc = 0
+        for obj in d.Objects:
+            n, rws = repoint_expressions(obj, "VarSet", "<<Params>>#VarSet")
+            n_rewrites_doc += n
+            all_rewrites.extend(rws)
+
+        try:
+            d.removeObject(src_vs.Name)
+            removed = True
+        except Exception as e:
+            removed = False
+            summary_lines.append(f"  [warn] {src_doc_name}: could not remove VarSet: {e}")
+        d.recompute()
+
+        summary_lines.append(
+            f"  {src_doc_name}: copied={len(copied)} skipped={len(skipped)} "
+            f"expr_rewrites={n_rewrites_doc} varset_removed={removed}"
+        )
+        if copied:
+            summary_lines.append(f"    new in Params: {copied}")
+        if skipped:
+            summary_lines.append(f"    already in Params (skipped): {skipped}")
+
+    params_doc.recompute()
+    params_doc.save()
+    for src_doc_name in SOURCE_DOCS:
+        d = App.getDocument(src_doc_name)
+        if d is not None:
+            d.save()
+
+    App.Console.PrintMessage("\n=== migrate_varset_to_params: summary ===\n")
+    for line in summary_lines:
+        App.Console.PrintMessage(line + "\n")
+    final_props = [p for p in params_vs.PropertiesList if p not in SYSTEM_PROPS]
+    App.Console.PrintMessage(f"Params.VarSet final properties: {final_props}\n")
+    App.Console.PrintMessage(f"Saved Params.FCStd -> {PARAMS_PATH}\n")
+    if all_rewrites:
+        App.Console.PrintMessage("\nRewrites (obj, path, old -> new):\n")
+        for name, path, old, new in all_rewrites:
+            App.Console.PrintMessage(f"  {name}.{path}: {old}  ->  {new}\n")
+
+
+main()

@@ -32,7 +32,9 @@ DIMENSIONAL_TYPES = {
     9: "Radius",
     10: "Angle",
     17: "Diameter",
-    18: "Weight",
+    # 18: "Weight" — exempted in this project. Weight constraints drive
+    # B-spline pole weights (curve shaping), not load-bearing geometry. See
+    # WARNINGS.md for context.
 }
 
 
